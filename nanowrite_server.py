@@ -7,6 +7,7 @@ easy marshalling into XML. No further changes are implemented.
 
 import time
 import base64
+import xmlrpclib
 
 from DocXMLRPCServer import DocXMLRPCServer, DocXMLRPCRequestHandler
 from nanowrite import NanoWrite
@@ -68,7 +69,7 @@ class NanoWriteRPC(NanoWrite):
         @rtype: str
         """
         meta, pic = NanoWrite.get_camera_picture(self)
-        return meta, base64.encodestring(pic)
+        return meta, xmlrpclib.Binary(pic)
 
     def execute_complex_gwl_files(self, start_name, gwl_files, readback_files=None):
         """
@@ -92,7 +93,7 @@ class NanoWriteRPC(NanoWrite):
         """
         results = NanoWrite.execute_complex_gwl_files(self, start_name, gwl_files, readback_files)
 
-        return {key: base64.encodestring(value) for key, value in results.items()}
+        return {key: xmlrpclib.Binary(value) for key, value in results.items()}
 
 if __name__ == '__main__':
     user_auth = {'user': 'password'}
