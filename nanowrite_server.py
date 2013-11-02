@@ -8,8 +8,48 @@ easy marshalling into XML. No further changes are implemented.
 import time
 import base64
 
-from DocXMLRPCServer import DocXMLRPCServer
+from DocXMLRPCServer import DocXMLRPCServer, DocXMLRPCRequestHandler
 from nanowrite import NanoWrite
+
+
+class VerifyingDocXMLRPCServer(DocXMLRPCServer):
+    """
+    This class implements a documented XML-RPC server which requires authentication.
+    """
+    def __init__(self, users_auth, *args, ** kargs):
+        # we use an inner class so that we can call out to the
+        # authenticate method
+        class VerifyingRequestHandler(DocXMLRPCRequestHandler):
+            def parse_request(myself):
+                # first, call the original implementation which returns
+                # True if all OK so far
+                if DocXMLRPCRequestHandler.parse_request(myself):
+                    # next we authenticate
+                    if self.authenticate(myself.headers):
+                        return True
+                    else:
+                        # if authentication fails, tell the client
+                        myself.send_error(401, 'Authentication failed')
+                return False
+        self._users_auth = users_auth
+        DocXMLRPCServer.__init__(self, requestHandler=VerifyingRequestHandler, *args, **kargs)
+
+    def authenticate(self, headers):
+        # We need an authentication
+        if not 'Authorization' in headers:
+            return False
+
+        (basic, _, encoded) = headers.get('Authorization').partition(' ')
+
+        assert basic == 'Basic', 'Only basic authentication supported'
+        (username, _, password) = base64.b64decode(encoded).partition(':')
+
+        # Check if username is valid
+        if username in self._users_auth and password == self._users_auth[username]:
+            return True
+
+        # User was not authenticated
+        return False
 
 
 class NanoWriteRPC(NanoWrite):
@@ -55,7 +95,8 @@ class NanoWriteRPC(NanoWrite):
         return {key: base64.encodestring(value) for key, value in results.items()}
 
 if __name__ == '__main__':
-    server = DocXMLRPCServer(('', 60000), logRequests=1, allow_none=True)
+    user_auth = {'user': 'password'}
+    server = VerifyingDocXMLRPCServer(user_auth, ('', 60000), logRequests=1, allow_none=True)
     server.register_introspection_functions()
     server.register_instance(NanoWriteRPC())
 
