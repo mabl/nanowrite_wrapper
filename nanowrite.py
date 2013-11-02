@@ -1,6 +1,3 @@
-import pywinauto
-import pywinauto.clipboard
-
 import tempfile
 import shutil
 import time
@@ -9,7 +6,10 @@ import os
 import os.path
 import re
 
+import pywinauto
+import pywinauto.clipboard
 import winpaths
+
 
 PATH = r"C:\Program Files\Nanoscribe\NanoWrite\NanoWrite.exe"
 
@@ -56,6 +56,13 @@ class NanoWrite(object):
         pass
 
     def __init__(self, nanowrite_path=PATH):
+        """
+        Constructor of the NanoWrite class.
+
+        @param nanowrite_path: The path to the NanoWrite executabe.
+            The path is used to find the running instance of NanoWrite.
+        @type nanowrite_path: str
+        """
         self._tmpfolder = None
 
         self._pwa_app = pywinauto.application.Application()
@@ -77,14 +84,20 @@ class NanoWrite(object):
         if self._tmpfolder is not None:
             shutil.rmtree(self._tmpfolder)
 
-    def get_current_log(self):
+    @staticmethod
+    def get_current_log():
         """
-        Get the current log file content.
+        Returns the current log since the start of the NanoWrite program.
+
+        @note:
+            This script assumes that the latest log file in %localappdata%\Nanoscribe\Messages
+            contains all the recent logs since the program started.
+
+
+        @return: List of two elements lists, containing a datetime object and the log message.
+            The latest log message is the last element of the list.
+        @rtype: list
         """
-
-        # This script assumes that the latest log file in %localappdata%\Nanoscribe\Messages
-        # contains all the recent logs since the program started.
-
         msgs_dir_path = os.path.join(winpaths.get_local_appdata(), 'Nanoscribe\Messages')
         assert os.path.exists(msgs_dir_path), 'NanoWrite messages log path does not exist'
 
@@ -95,7 +108,6 @@ class NanoWrite(object):
         f = open(os.path.join(msgs_dir_path, log_file_name), 'r')
 
         results = list()
-        current_timestamp = None
         for line in f.readlines():
             if len(line) <= 30:
                 continue
@@ -104,6 +116,7 @@ class NanoWrite(object):
             msg_txt = line[29:]
 
             if len(timestamp_txt.strip()) == 0:
+                assert len(results) > 0, 'No previous timestamp available in log file'
                 results[-1][1] += msg_txt
             else:
                 # FIXME: Don't ignore time zone offset here
@@ -113,11 +126,25 @@ class NanoWrite(object):
         return results
 
     def execute_mini_gwl(self, commands, execute=True, append_safeguard=True):
+        """
+        Execute gwl commands by inserting them into the mini gwl window.
+
+        @note: This command does not stall until the gwl command has finished.
+
+        @param commands: String or list of strings to insert into the GWL window.
+        @type commands: str, list
+
+        @param execute: Execute the command or just insert it.
+        @type execute: bool
+
+        @raise NanoWrite.NotReady: Raised if the last command has not finished.
+        """
         if not self.has_finished():
             raise NanoWrite.NotReady()
 
-        if append_safeguard:
-            commands = 'MessageOut ***Seperator**\n' + commands + '\nwait 0.01'
+        # Append a safeguard, this way the "done." of the last command does not bother us.
+        # Also insert a wait command to force a progress bar.
+        commands = 'MessageOut ***Seperator**\n' + commands + '\nwait 0.01'
 
         # Make sure that the correct dialog has the focus
         self._main_dlg.SetFocus()
@@ -153,6 +180,14 @@ class NanoWrite(object):
             self.show_camera()
 
     def load_gwl_file(self, file_path):
+        """
+        Load a GWL file from a given path. The file is not automatically executed. Use @p start_dlw for this.
+
+        @param file_path: Path to GWL file.
+        @type file_path: str
+
+        @rtype: None
+        """
         if not self.has_finished():
             raise NanoWrite.NotReady()
 
@@ -171,14 +206,21 @@ class NanoWrite(object):
         time.sleep(0.5)
 
     def show_camera(self):
+        """
+        Switch to the camera view.
+        """
         # Make sure that the correct dialog has the focus
         self._main_dlg.SetFocus()
 
         # Go to advanced settings tab and click into text field
         self._main_dlg.ClickInput(coords=self._settings['positions']['camera'])
 
-
     def start_dlw(self):
+        """
+        Start writing the loaded DLW file.
+
+        @raise NanoWrite.NotReady: Raised if the last command has not finished.
+        """
         if not self.has_finished():
             raise NanoWrite.NotReady()
 
@@ -194,6 +236,25 @@ class NanoWrite(object):
         self._job_running = True
 
     def execute_complex_gwl_files(self, start_name, gwl_files, readback_files=None):
+        """
+        Execute a set of possibly several GLW files and read back generated output files.
+
+        @note: The NanoWriteRPC class overwrites this method and encodes the binary return values with BASE64 to
+            allow marshaling in XML.
+
+        @param start_name: Name of the executed GLW file.
+        @type start_name: str
+
+        @param gwl_files: Dictionary containing the GLW files. Where the key is the filename and the value is the
+         content of the file.
+        @type gwl_files: dict
+
+        @param readback_files: List of generated files to read back. In most cases these will be pictures.
+        @type readback_files: list, tuple
+
+        @return: Dictionary containing the files to read back in @p readback_files.
+        @rtype: dict
+        """
         assert start_name in gwl_files, 'Invalid start name given'
 
         for filename, content in gwl_files.items():
@@ -218,14 +279,25 @@ class NanoWrite(object):
             return results
         return {}
 
-    def _get_value_from_selectable_field(self, dlg, pos):
-        # Make sure that the correct dialog has the focus
+    @staticmethod
+    def _get_value_from_selectable_field(dlg, pos):
+        """
+        Get the content of a selectable text field.
+
+        @note: This uses evil hacks which include sending keys and using the clipboard.
+
+        @param dlg: Dialog handle.
+        @param pos: Pixel position of the field.
+        @return: The value of the text field.
+        @rtype: str
+        """
+        # Make sure that the dialog has the focus
         dlg.SetFocus()
         dlg.ClickInput(coords=pos)
 
-        self._main_dlg.TypeKeys('^{END}')
-        self._main_dlg.TypeKeys('+^{HOME}')
-        self._main_dlg.TypeKeys('^c')
+        dlg.TypeKeys('^{END}')
+        dlg.TypeKeys('+^{HOME}')
+        dlg.TypeKeys('^c')
 
         return pywinauto.clipboard.GetData(format=13)
 
@@ -323,29 +395,27 @@ class NanoWrite(object):
         self.execute_mini_gwl("CapturePhoto %s" % img_path)
         self.wait_until_finished()
 
-        img_data = None
         with open(img_path, 'rb') as f:
             img_data = f.read()
 
-        meta_data = None
         with open(img_meta_path, 'rb') as f:
             meta_data = f.read()
 
         return meta_data, img_data
 
     def get_piezo_position(self):
-        valX = float(self._get_value_from_selectable_field(self._main_dlg,
+        val_x = float(self._get_value_from_selectable_field(self._main_dlg,
                                 self._settings['positions']['piezo_x_txt']))
-        valY = float(self._get_value_from_selectable_field(self._main_dlg,
+        val_y = float(self._get_value_from_selectable_field(self._main_dlg,
                         self._settings['positions']['piezo_y_txt']))
-        valZ = float(self._get_value_from_selectable_field(self._main_dlg,
+        val_z = float(self._get_value_from_selectable_field(self._main_dlg,
                         self._settings['positions']['piezo_z_txt']))
 
         if self.is_z_inverted():
-            valX = self._piezo_range[0] - valX
-            valZ = self._piezo_range[2] - valZ
+            val_x = self._piezo_range[0] - val_x
+            val_z = self._piezo_range[2] - val_z
 
-        return valX, valY, valZ
+        return val_x, val_y, val_z
 
     def is_z_inverted(self):
         return self._get_pixel(self._settings['positions']['inverted_z_axis_pixel'])[1] > 100
@@ -361,13 +431,13 @@ class NanoWrite(object):
         assert self.is_z_inverted() == state, "Invert z-state does not match"
 
     def get_stage_position(self):
-        valX = float(self._get_value_from_selectable_field(self._main_dlg,
+        val_x = float(self._get_value_from_selectable_field(self._main_dlg,
                                 self._settings['positions']['stage_x_txt']))
-        valY = float(self._get_value_from_selectable_field(self._main_dlg,
+        val_y = float(self._get_value_from_selectable_field(self._main_dlg,
                         self._settings['positions']['stage_y_txt']))
-        valZ = float(self._get_value_from_selectable_field(self._main_dlg,
+        val_z = float(self._get_value_from_selectable_field(self._main_dlg,
                         self._settings['positions']['stage_z_txt']))
-        return valX, valY, valZ
+        return val_x, val_y, val_z
 
     def _get_screenshot(self):
         return self._main_dlg.CaptureAsImage()
