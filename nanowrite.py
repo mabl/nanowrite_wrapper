@@ -1,3 +1,10 @@
+"""
+Simple wrapper class around the NanoWrite software.
+
+This class was intentionally implemented to be as simple as possible to allow easy distribution.
+Currently, the only dependency not included in standard python is pywinauto.
+"""
+
 import tempfile
 import shutil
 import time
@@ -302,11 +309,26 @@ class NanoWrite(object):
         return pywinauto.clipboard.GetData(format=13)
 
     def get_progress_time(self):
+        """
+        Read the progress time field.
+
+        The progress field is located left of the progress bar and counts seconds/minutes spent on the current job.
+
+        @return: The progress time in seconds.
+        @rtype: int
+        """
         val = self._get_value_from_selectable_field(self._main_dlg,
-                                self._settings['positions']['progress_txt'])
-        return val
+                                                    self._settings['positions']['progress_txt']).split(':')
+        seconds = val[0] * 60 * 60 + val[1] * 60 + val[0]
+        return seconds
 
     def get_progress_estimate(self):
+        """
+        Read the progress estimate field.
+
+        @return: The projected time to complete the job in seconds.
+        @rtype: int
+        """
         # Make sure that the correct dialog has the focus
         self._main_dlg.SetFocus()
 
@@ -314,11 +336,18 @@ class NanoWrite(object):
         self._main_dlg.ClickInput(coords=self._settings['positions']['graph'])
 
         val = self._get_value_from_selectable_field(self._main_dlg,
-                                self._settings['positions']['progress_estimate_txt'])
-        return val
+                                self._settings['positions']['progress_estimate_txt']).split(':')
+
+        seconds = val[0] * 60 * 60 + val[1] * 60 + val[0]
+        return seconds
 
     def _get_pixel(self, coord):
-        # Make sure that the correct dialog has the focus
+        """
+        Get the (R, G, B) value of the pixel at the given position.
+        @param coord: Pixel position.
+        @return: Tuple with the (R, G, B) value
+        @rtype: tuple
+        """
         self._main_dlg.SetFocus()
 
         img = self._main_dlg.CaptureAsImage()
@@ -365,6 +394,12 @@ class NanoWrite(object):
         return False
 
     def wait_until_finished(self, poll_interval=0.5):
+        """
+        Stall execution until the current job has finished.
+
+        @param poll_interval: Polling interval in seconds
+        @type poll_interval: float
+        """
         while not self.has_finished():
             time.sleep(poll_interval)
 
@@ -388,7 +423,10 @@ class NanoWrite(object):
 
         This is implemented via the mini gwl command window.
 
-        NOTE: This requires that the camera is actually enabled. Otherwise nanowrite just hangs...
+        @note: This requires that the camera is actually enabled. Otherwise NanoWrite just hangs...
+
+        @return: The binary tif file.
+        @rtype: str
         """
         img_path = os.path.join(self._tmpfolder, 'captured.tif')
         img_meta_path = img_path + '_meta.txt'
@@ -404,6 +442,14 @@ class NanoWrite(object):
         return meta_data, img_data
 
     def get_piezo_position(self):
+        """
+        Returns the current piezo position corrected by the z-inversion feature.
+
+        These coordinates correspond directly to the coordinates used in GLW commands.
+
+        @return: Tuple of x, y, z coordinates
+        @rtype: tuple
+        """
         val_x = float(self._get_value_from_selectable_field(self._main_dlg,
                                 self._settings['positions']['piezo_x_txt']))
         val_y = float(self._get_value_from_selectable_field(self._main_dlg,
@@ -418,9 +464,23 @@ class NanoWrite(object):
         return val_x, val_y, val_z
 
     def is_z_inverted(self):
+        """
+        Check if the z-Axis inversion is enabled.
+
+        @return: Returns True if the z-axis is inverted.
+        @rtype: bool
+        """
         return self._get_pixel(self._settings['positions']['inverted_z_axis_pixel'])[1] > 100
 
     def set_z_inverted(self, state):
+        """
+        Set the z-axis inversion to the given state.
+
+        If the state is already set, no action is executed.
+
+        @param state: True if the z-axis is to be inverted.
+        @type state: bool
+        """
         if self.is_z_inverted() ^ state:
             # Make sure that the correct dialog has the focus
             self._main_dlg.SetFocus()
@@ -431,6 +491,14 @@ class NanoWrite(object):
         assert self.is_z_inverted() == state, "Invert z-state does not match"
 
     def get_stage_position(self):
+        """
+        Get the current stage position.
+
+        @return: Tuple of x, y, z coordinates
+        @rtype: tuple
+        """
+        #FIXME: This might also need a z-inversion correction.
+
         val_x = float(self._get_value_from_selectable_field(self._main_dlg,
                                 self._settings['positions']['stage_x_txt']))
         val_y = float(self._get_value_from_selectable_field(self._main_dlg,
@@ -440,6 +508,12 @@ class NanoWrite(object):
         return val_x, val_y, val_z
 
     def _get_screenshot(self):
+        """
+        Get a screenshot of the main window.
+
+        @return: A PIL image object.
+        """
+        self._main_dlg.SetFocus()
         return self._main_dlg.CaptureAsImage()
 
 def main():
