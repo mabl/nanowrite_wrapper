@@ -8,6 +8,7 @@ easy marshalling into XML. No further changes are implemented.
 import time
 import base64
 import xmlrpclib
+import signal
 
 from DocXMLRPCServer import DocXMLRPCServer, DocXMLRPCRequestHandler
 from nanowrite import NanoWrite
@@ -16,8 +17,10 @@ from nanowrite import NanoWrite
 class VerifyingDocXMLRPCServer(DocXMLRPCServer):
     """
     This class implements a documented XML-RPC server which requires authentication.
+
+    Additionally, this class allows graceful shutdown on signals
     """
-    def __init__(self, users_auth, *args, ** kargs):
+    def __init__(self, users_auth, timeout=0.5, *args, ** kargs):
         # we use an inner class so that we can call out to the
         # authenticate method
         class VerifyingRequestHandler(DocXMLRPCRequestHandler):
@@ -33,9 +36,15 @@ class VerifyingDocXMLRPCServer(DocXMLRPCServer):
                         myself.send_error(401, 'Authentication failed')
                 return False
         self._users_auth = users_auth
+        self._finished = False
+        self.timeout = timeout
         DocXMLRPCServer.__init__(self, requestHandler=VerifyingRequestHandler, *args, **kargs)
 
     def authenticate(self, headers):
+        # If no user was specified, don't require authentication
+        if self._users_auth is None or len(self._users_auth) == 0:
+            return True
+
         # We need an authentication
         if not 'Authorization' in headers:
             return False
@@ -52,10 +61,25 @@ class VerifyingDocXMLRPCServer(DocXMLRPCServer):
         # User was not authenticated
         return False
 
+    def register_shutdown_signal(self, signum):
+        signal.signal(signum, self._signal_handler)
+
+    def _signal_handler(self, signum, frame):
+        self.shutdown()
+
+    def shutdown(self):
+        self._finished = True
+
+    def serve_forever(self):
+        self._finished = False
+        while not self._finished:
+            server.handle_request()
+
 
 class NanoWriteRPC(NanoWrite):
     def __init__(self, *args, **nargs):
-        NanoWrite.__init__(self, *args, **nargs)
+        #NanoWrite.__init__(self, *args, **nargs)
+        pass
 
     def get_camera_picture(self):
         """
@@ -95,11 +119,44 @@ class NanoWriteRPC(NanoWrite):
 
         return {key: xmlrpclib.Binary(value) for key, value in results.items()}
 
+
+class NanoWriteRPCClient(object):
+    """
+    This class mimics the same behaviour as the NanoWrite class but connects over network to the XML-RPC server.
+
+    You can easily substitute instances of and NanoWriteRPCClient without any loss in functionality.
+
+    @todo: This class needs testing.
+    """
+
+    def __init__(self, uri, *args, **nargs):
+        self._proxy = xmlrpclib.ServerProxy(uri, *args, **nargs)
+
+    def __getattr__(self, item):
+        if item not in self.__dict__:
+            return self.__dict__['_proxy'].__getattr__(item)
+        else:
+            return self.__dict__[item]
+
+    def get_camera_picture(self):
+        return self._proxy.get_camera_picture().data
+
+    def execute_complex_gwl_files(self, start_name, gwl_files, readback_files=None):
+        results = self._proxy.execute_complex_gwl_files(start_name, gwl_files, readback_files)
+        return {key: value.data for key, value in results.items()}
+
+    def wait_until_finished(self, poll_interval=0.5):
+        # Wait on the client side to avoid timeouts.
+        while not self._proxy.has_finished():
+            time.sleep(poll_interval)
+
 if __name__ == '__main__':
     user_auth = {'user': 'password'}
     server = VerifyingDocXMLRPCServer(user_auth, ('', 60000), logRequests=1, allow_none=True)
     server.register_introspection_functions()
     server.register_instance(NanoWriteRPC())
+    server.register_shutdown_signal(signal.SIGHUP)
+    server.register_shutdown_signal(signal.SIGINT)
 
     print time.asctime(), 'Server starting'
     server.serve_forever()
