@@ -20,7 +20,7 @@ class VerifyingDocXMLRPCServer(DocXMLRPCServer):
 
     Additionally, this class allows graceful shutdown on signals
     """
-    def __init__(self, users_auth, timeout=0.5, *args, ** kargs):
+    def __init__(self, users_auth, addr, timeout=0.5, *args, **kargs):
         # we use an inner class so that we can call out to the
         # authenticate method
         class VerifyingRequestHandler(DocXMLRPCRequestHandler):
@@ -38,7 +38,7 @@ class VerifyingDocXMLRPCServer(DocXMLRPCServer):
         self._users_auth = users_auth
         self._finished = False
         self.timeout = timeout
-        DocXMLRPCServer.__init__(self, requestHandler=VerifyingRequestHandler, *args, **kargs)
+        DocXMLRPCServer.__init__(self, addr, *args, requestHandler=VerifyingRequestHandler, **kargs)
 
     def authenticate(self, headers):
         # If no user was specified, don't require authentication
@@ -78,7 +78,7 @@ class VerifyingDocXMLRPCServer(DocXMLRPCServer):
 
 class NanoWriteRPC(NanoWrite):
     def __init__(self, *args, **nargs):
-        #NanoWrite.__init__(self, *args, **nargs)
+        NanoWrite.__init__(self, *args, **nargs)
         pass
 
     def get_camera_picture(self):
@@ -155,7 +155,6 @@ if __name__ == '__main__':
     server = VerifyingDocXMLRPCServer(user_auth, ('', 60000), logRequests=1, allow_none=True)
     server.register_introspection_functions()
     server.register_instance(NanoWriteRPC())
-    server.register_shutdown_signal(signal.SIGHUP)
     server.register_shutdown_signal(signal.SIGINT)
 
     print time.asctime(), 'Server starting'
