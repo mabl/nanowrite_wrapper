@@ -91,6 +91,9 @@ class NanoWrite(object):
         if self._tmpfolder is not None:
             shutil.rmtree(self._tmpfolder)
 
+    def get_piezo_range(self):
+        return self._piezo_range
+
     @staticmethod
     def get_current_log():
         """
@@ -203,14 +206,18 @@ class NanoWrite(object):
 
         # Go to advanced settings tab and click into text field
         self._main_dlg.ClickInput(coords=self._settings['positions']['load_structure'])
-
+        time.sleep(0.5)
         open_dlg = self._pwa_app['Open file']
+        time.sleep(0.5)
         open_dlg['Edit'].SetEditText(file_path)
         #open_dlg['Open'].Click()
+        time.sleep(0.5)
         open_dlg.TypeKeys('{ENTER}')
 
         # Sleep some time, to allow the progress bar to update
-        time.sleep(0.5)
+        time.sleep(1.0)
+        self._job_running = True
+        self.wait_until_finished()
 
     def show_camera(self):
         """
@@ -287,7 +294,7 @@ class NanoWrite(object):
         return {}
 
     @staticmethod
-    def _get_value_from_selectable_field(dlg, pos):
+    def _get_value_from_selectable_field(dlg, pos, sleeps=0.2):
         """
         Get the content of a selectable text field.
 
@@ -298,14 +305,16 @@ class NanoWrite(object):
         @return: The value of the text field.
         @rtype: str
         """
+
         # Make sure that the dialog has the focus
         dlg.SetFocus()
-        dlg.ClickInput(coords=pos)
-
-        dlg.TypeKeys('^{END}')
-        dlg.TypeKeys('+^{HOME}')
+        #dlg.ClickInput(coords=pos)
+        #dlg.TypeKeys('^{END}')
+        #dlg.TypeKeys('+^{HOME}')
+        dlg.DoubleClickInput(coords=pos)
+        time.sleep(sleeps)
         dlg.TypeKeys('^c')
-
+        time.sleep(sleeps)
         return pywinauto.clipboard.GetData(format=13)
 
     def get_progress_time(self):
@@ -319,7 +328,8 @@ class NanoWrite(object):
         """
         val = self._get_value_from_selectable_field(self._main_dlg,
                                                     self._settings['positions']['progress_txt']).split(':')
-        seconds = val[0] * 60 * 60 + val[1] * 60 + val[0]
+        val = [float(x) for x in val]
+        seconds = val[0] * 60 * 60 + val[1] * 60 + val[2]
         return seconds
 
     def get_progress_estimate(self):
@@ -338,7 +348,8 @@ class NanoWrite(object):
         val = self._get_value_from_selectable_field(self._main_dlg,
                                 self._settings['positions']['progress_estimate_txt']).split(':')
 
-        seconds = val[0] * 60 * 60 + val[1] * 60 + val[0]
+        val = [float(x) for x in val]
+        seconds = val[0] * 60 * 60 + val[1] * 60 + val[2]
         return seconds
 
     def _get_pixel(self, coord):
@@ -515,6 +526,45 @@ class NanoWrite(object):
         """
         self._main_dlg.SetFocus()
         return self._main_dlg.CaptureAsImage()
+
+    def find_interface(self, at=50):
+        gwl = 'findInterfaceAt %f' % at
+        self.execute_mini_gwl(gwl)
+        self.wait_until_finished()
+
+    def move_piezo(self, x, y, z=None):
+        if z is None:
+            z = self.get_piezo_position()[2]
+        gwl = '%f %f %f 0\nwrite' % (x, y, z)
+        self.execute_mini_gwl(gwl)
+        self.wait_until_finished()
+
+        # Give it some time to settle
+        time.sleep(0.5)
+
+    def move_piezo_relative(self, dx=0, dy=0, dz=0):
+        piezo_position = self.get_piezo_position()
+        self.move_piezo(piezo_position[0] + dx, piezo_position[1] + dy, piezo_position[2] + dz)
+
+    def move_stage_relative(self, dx=0, dy=0, dz=0):
+        gwl = 'MoveStageX %f\nMoveStageY %f\nAddZDrivePosition %f\nwrite' % (dx, dy, dz)
+        self.execute_mini_gwl(gwl)
+        self.wait_until_finished()
+
+        # Give it some time to settle
+        time.sleep(0.5)
+
+    def move_piezo_to_same_location_by_stage(self, x, y):
+        """
+        Move the piezo to the given location and the stage in the opposite direction.
+
+        In the end, the microscope should be at the same location.
+        """
+        piezo_position = self.get_piezo_position()
+        piezo_correction = (x - piezo_position[0], y - piezo_position[1])
+        self.move_piezo(x, y, piezo_position[2])
+        self.move_stage_relative(-piezo_correction[0], -piezo_correction[1])
+
 
 def main():
     nanowrite = NanoWrite()
