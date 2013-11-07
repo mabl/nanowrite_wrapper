@@ -119,37 +119,6 @@ class NanoWriteRPC(NanoWrite):
 
         return {key: xmlrpclib.Binary(value) for key, value in results.items()}
 
-
-class NanoWriteRPCClient(object):
-    """
-    This class mimics the same behaviour as the NanoWrite class but connects over network to the XML-RPC server.
-
-    You can easily substitute instances of and NanoWriteRPCClient without any loss in functionality.
-
-    @todo: This class needs testing.
-    """
-
-    def __init__(self, uri, *args, **nargs):
-        self._proxy = xmlrpclib.ServerProxy(uri, *args, **nargs)
-
-    def __getattr__(self, item):
-        if item not in self.__dict__:
-            return self.__dict__['_proxy'].__getattr__(item)
-        else:
-            return self.__dict__[item]
-
-    def get_camera_picture(self):
-        return self._proxy.get_camera_picture().data
-
-    def execute_complex_gwl_files(self, start_name, gwl_files, readback_files=None):
-        results = self._proxy.execute_complex_gwl_files(start_name, gwl_files, readback_files)
-        return {key: value.data for key, value in results.items()}
-
-    def wait_until_finished(self, poll_interval=0.5):
-        # Wait on the client side to avoid timeouts.
-        while not self._proxy.has_finished():
-            time.sleep(poll_interval)
-
 if __name__ == '__main__':
     user_auth = {'user': 'password'}
     server = VerifyingDocXMLRPCServer(user_auth, ('', 60000), logRequests=1, allow_none=True)
