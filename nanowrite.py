@@ -62,7 +62,7 @@ class NanoWrite(object):
     class NotReady(Exception):
         pass
 
-    def __init__(self, nanowrite_path=PATH):
+    def __init__(self, nanowrite_path=PATH, cache_piezo_position=True):
         """
         Constructor of the NanoWrite class.
 
@@ -87,12 +87,20 @@ class NanoWrite(object):
 
         self._piezo_range = (300, 300, 300)
 
+        self._cache_piezo_position = cache_piezo_position
+        self._cached_piezo_position = None
+
     def __del__(self):
         if self._tmpfolder is not None:
             shutil.rmtree(self._tmpfolder)
 
     def get_piezo_range(self):
         return self._piezo_range
+
+    def is_within_piezo_range(self, x, y, z):
+        return ((0 <= x <= self._piezo_range[0]) and
+                (0 <= y <= self._piezo_range[1]) and
+                (0 <= z <= self._piezo_range[2]))
 
     @staticmethod
     def get_current_log():
@@ -135,7 +143,7 @@ class NanoWrite(object):
                 results.append([timestamp, msg_txt])
         return results
 
-    def execute_mini_gwl(self, commands, execute=True, append_safeguard=True):
+    def execute_mini_gwl(self, commands, execute=True, append_safeguard=True, invalidate_piezo=True):
         """
         Execute gwl commands by inserting them into the mini gwl window.
 
@@ -188,6 +196,9 @@ class NanoWrite(object):
 
             # Switch to camera view, since there might be something of interest there and it does not hurt us
             self.show_camera()
+
+            if invalidate_piezo:
+                self.invalidate_piezo_position()
 
     def load_gwl_file(self, file_path):
         """
@@ -248,6 +259,7 @@ class NanoWrite(object):
         self.show_camera()
 
         self._job_running = True
+        self.invalidate_piezo_position()
 
     def execute_complex_gwl_files(self, start_name, gwl_files, readback_files=None):
         """
@@ -452,6 +464,14 @@ class NanoWrite(object):
 
         return meta_data, img_data
 
+    def invalidate_piezo_position(self):
+        """
+        Invalidate the chached piezo position.
+
+        Use, when you know that an outside instance manipulated the piezo position.
+        """
+        self._cached_piezo_position = None
+
     def get_piezo_position(self):
         """
         Returns the current piezo position corrected by the z-inversion feature.
@@ -461,6 +481,10 @@ class NanoWrite(object):
         @return: Tuple of x, y, z coordinates
         @rtype: tuple
         """
+
+        if self._cached_piezo_position is not None and self._cache_piezo_position:
+            return self._cache_piezo_position
+
         val_x = float(self._get_value_from_selectable_field(self._main_dlg,
                                 self._settings['positions']['piezo_x_txt']))
         val_y = float(self._get_value_from_selectable_field(self._main_dlg,
@@ -472,7 +496,9 @@ class NanoWrite(object):
             val_x = self._piezo_range[0] - val_x
             val_z = self._piezo_range[2] - val_z
 
-        return val_x, val_y, val_z
+        piezo_position = val_x, val_y, val_z
+        self._cached_piezo_position = piezo_position
+        return piezo_position
 
     def is_z_inverted(self):
         """
@@ -535,8 +561,11 @@ class NanoWrite(object):
     def move_piezo(self, x, y, z=None):
         if z is None:
             z = self.get_piezo_position()[2]
-        gwl = '%f %f %f 0\nwrite' % (x, y, z)
-        self.execute_mini_gwl(gwl)
+
+        new_pos = (x, y, z)
+        new_pos_invalid = not self.is_within_piezo_range(*new_pos)
+        gwl = '%f %f %f 0\nwrite' % new_pos
+        self.execute_mini_gwl(gwl, invalidate_piezo=new_pos_invalid)
         self.wait_until_finished()
 
         # Give it some time to settle
