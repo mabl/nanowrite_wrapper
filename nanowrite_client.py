@@ -1,12 +1,4 @@
-"""
-This file implements a simple XML-RPC server for the nanowrite wrapper.
-
-The NanoWrite class is extended to wrap the binary files in BASE64 to allow
-easy marshalling into XML. No further changes are implemented.
-"""
-
 import time
-import base64
 import xmlrpclib
 
 class NanoWriteRPCClient(object):
