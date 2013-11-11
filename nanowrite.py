@@ -217,13 +217,22 @@ class NanoWrite(object):
 
         # Go to advanced settings tab and click into text field
         self._main_dlg.ClickInput(coords=self._settings['positions']['load_structure'])
-        time.sleep(0.5)
-        open_dlg = self._pwa_app['Open file']
-        time.sleep(0.5)
-        open_dlg['Edit'].SetEditText(file_path)
-        #open_dlg['Open'].Click()
-        time.sleep(0.5)
-        open_dlg.TypeKeys('{ENTER}')
+
+        while True:
+            try:
+                time.sleep(0.5)
+                open_dlg = self._pwa_app['Open file']
+                time.sleep(0.5)
+                open_dlg['Edit'].SetEditText(file_path)
+                if open_dlg['Edit'].TextBlock() != file_path:
+                    continue
+
+                #open_dlg['Open'].Click()
+                time.sleep(0.5)
+                open_dlg.TypeKeys('{ENTER}')
+                break
+            except Exception:
+                continue
 
         # Sleep some time, to allow the progress bar to update
         time.sleep(1.0)
@@ -439,6 +448,7 @@ class NanoWrite(object):
         self._main_dlg.ClickInput(coords=self._settings['positions']['abort'])
 
         self.wait_until_finished()
+        self.invalidate_piezo_position()
 
     def get_camera_picture(self):
         """
@@ -453,7 +463,7 @@ class NanoWrite(object):
         """
         img_path = os.path.join(self._tmpfolder, 'captured.tif')
         img_meta_path = img_path + '_meta.txt'
-        self.execute_mini_gwl("CapturePhoto %s" % img_path)
+        self.execute_mini_gwl("CapturePhoto %s" % img_path, invalidate_piezo=False)
         self.wait_until_finished()
 
         with open(img_path, 'rb') as f:
@@ -565,10 +575,10 @@ class NanoWrite(object):
         new_pos = (x, y, z)
         new_pos_invalid = not self.is_within_piezo_range(*new_pos)
         gwl = '%f %f %f 0\nwrite' % new_pos
-        self.execute_mini_gwl(gwl, invalidate_piezo=new_pos_invalid)
+        self.execute_mini_gwl(gwl, invalidate_piezo=True)
         self.wait_until_finished()
 
-        self._cached_piezo_position = new_pos
+        self._cached_piezo_position = new_pos if new_pos_invalid else None
         # Give it some time to settle
         time.sleep(0.5)
 
@@ -576,9 +586,18 @@ class NanoWrite(object):
         piezo_position = self.get_piezo_position()
         self.move_piezo(piezo_position[0] + dx, piezo_position[1] + dy, piezo_position[2] + dz)
 
+    def move_stage(self, x, y, z=None):
+        current_stage_pos = self.get_stage_position()
+        if z is None:
+            z = current_stage_pos[2]
+
+        self.move_stage_relative(x-current_stage_pos[0],
+                                 y-current_stage_pos[1],
+                                 z-current_stage_pos[2])
+
     def move_stage_relative(self, dx=0, dy=0, dz=0):
         gwl = 'MoveStageX %f\nMoveStageY %f\nAddZDrivePosition %f\nwrite' % (dx, dy, dz)
-        self.execute_mini_gwl(gwl)
+        self.execute_mini_gwl(gwl, invalidate_piezo=False)
         self.wait_until_finished()
 
         # Give it some time to settle
