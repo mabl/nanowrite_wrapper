@@ -483,7 +483,7 @@ class NanoWrite(object):
         """
 
         if self._cached_piezo_position is not None and self._cache_piezo_position:
-            return self._cache_piezo_position
+            return self._cached_piezo_position
 
         val_x = float(self._get_value_from_selectable_field(self._main_dlg,
                                 self._settings['positions']['piezo_x_txt']))
@@ -568,6 +568,7 @@ class NanoWrite(object):
         self.execute_mini_gwl(gwl, invalidate_piezo=new_pos_invalid)
         self.wait_until_finished()
 
+        self._cached_piezo_position = new_pos
         # Give it some time to settle
         time.sleep(0.5)
 
