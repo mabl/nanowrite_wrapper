@@ -62,6 +62,9 @@ class NanoWrite(object):
     class NotReady(Exception):
         pass
 
+    class ExecutionError(Exception):
+        pass
+
     def __init__(self, nanowrite_path=PATH, cache_piezo_position=True):
         """
         Constructor of the NanoWrite class.
@@ -93,6 +96,12 @@ class NanoWrite(object):
     def __del__(self):
         if self._tmpfolder is not None:
             shutil.rmtree(self._tmpfolder)
+
+    def set_dialog_foreground(self, dlg=None):
+        dlg = dlg if dlg is not None else self._main_dlg
+        dlg.Restore()
+        dlg.SetFocus()
+
 
     def get_piezo_range(self):
         return self._piezo_range
@@ -162,10 +171,10 @@ class NanoWrite(object):
 
         # Append a safeguard, this way the "done." of the last command does not bother us.
         # Also insert a wait command to force a progress bar.
-        commands = 'MessageOut ***Seperator**\n' + commands + '\nwait 0.01'
+        commands = 'MessageOut ***Seperator***\n' + commands + '\nwait 0.01'
 
         # Make sure that the correct dialog has the focus
-        self._main_dlg.SetFocus()
+        self.set_dialog_foreground()
 
         # Go to advanced settings tab and click into text field
         self._main_dlg.ClickInput(coords=self._settings['positions']['advanced_settings'])
@@ -189,16 +198,28 @@ class NanoWrite(object):
         # And execute command if asked for
         if execute:
             self._main_dlg.ClickInput(coords=self._settings['positions']['advanced_settings_submit'])
-            # Wait for the log to refresh
-            time.sleep(1.0)
 
             self._job_running = True
 
             # Switch to camera view, since there might be something of interest there and it does not hurt us
             self.show_camera()
 
+            # Wait for the log to refresh
+            time.sleep(1.0)
+
             if invalidate_piezo:
                 self.invalidate_piezo_position()
+
+    def get_command_log(self):
+        # Get log of the last command command
+        # This assumes the use of the seperator.
+        cmd_log = list()
+        for timestamp, msg in reversed(self.get_current_log()):
+            cmd_log.append((timestamp, msg))
+            if '***Seperator***' in msg:
+                break
+
+        return reversed(cmd_log)
 
     def load_gwl_file(self, file_path):
         """
@@ -213,7 +234,7 @@ class NanoWrite(object):
             raise NanoWrite.NotReady()
 
         # Make sure that the correct dialog has the focus
-        self._main_dlg.SetFocus()
+        self.set_dialog_foreground()
 
         # Go to advanced settings tab and click into text field
         self._main_dlg.ClickInput(coords=self._settings['positions']['load_structure'])
@@ -244,12 +265,12 @@ class NanoWrite(object):
         Switch to the camera view.
         """
         # Make sure that the correct dialog has the focus
-        self._main_dlg.SetFocus()
+        self.set_dialog_foreground()
 
         # Go to advanced settings tab and click into text field
         self._main_dlg.ClickInput(coords=self._settings['positions']['camera'])
 
-    def start_dlw(self):
+    def start_dlw(self, invalidate_piezo=True):
         """
         Start writing the loaded DLW file.
 
@@ -259,7 +280,7 @@ class NanoWrite(object):
             raise NanoWrite.NotReady()
 
         # Make sure that the correct dialog has the focus
-        self._main_dlg.SetFocus()
+        self.set_dialog_foreground()
 
         # Go to advanced settings tab and click into text field
         self._main_dlg.ClickInput(coords=self._settings['positions']['start_dlw'])
@@ -268,9 +289,10 @@ class NanoWrite(object):
         self.show_camera()
 
         self._job_running = True
-        self.invalidate_piezo_position()
+        if invalidate_piezo:
+            self.invalidate_piezo_position()
 
-    def execute_complex_gwl_files(self, start_name, gwl_files, readback_files=None):
+    def execute_complex_gwl_files(self, start_name, gwl_files, readback_files=None, invalidate_piezo=True):
         """
         Execute a set of possibly several GLW files and read back generated output files.
 
@@ -292,6 +314,10 @@ class NanoWrite(object):
         """
         assert start_name in gwl_files, 'Invalid start name given'
 
+        # Append a safeguard, this way the "done." of the last command does not bother us.
+        # Also insert a wait command to force a progress bar.
+        gwl_files[start_name] = 'MessageOut ***Seperator***\n' + gwl_files[start_name] + '\nwait 0.01'
+
         for filename, content in gwl_files.items():
             # Make sure that an attacker might not access stuff outside of out temporary folder
             file_path = os.path.join(self._tmpfolder, os.path.basename(filename))
@@ -300,7 +326,7 @@ class NanoWrite(object):
 
         self.load_gwl_file(os.path.join(self._tmpfolder, os.path.basename(start_name)))
         self.wait_until_finished()
-        self.start_dlw()
+        self.start_dlw(invalidate_piezo=invalidate_piezo)
 
         if readback_files is not None:
             time.sleep(5)
@@ -314,8 +340,7 @@ class NanoWrite(object):
             return results
         return {}
 
-    @staticmethod
-    def _get_value_from_selectable_field(dlg, pos, sleeps=0.2):
+    def _get_value_from_selectable_field(self, dlg, pos, sleeps=0.2):
         """
         Get the content of a selectable text field.
 
@@ -328,7 +353,7 @@ class NanoWrite(object):
         """
 
         # Make sure that the dialog has the focus
-        dlg.SetFocus()
+        self.set_dialog_foreground(dlg)
         #dlg.ClickInput(coords=pos)
         #dlg.TypeKeys('^{END}')
         #dlg.TypeKeys('+^{HOME}')
@@ -361,7 +386,7 @@ class NanoWrite(object):
         @rtype: int
         """
         # Make sure that the correct dialog has the focus
-        self._main_dlg.SetFocus()
+        self.set_dialog_foreground()
 
         # Switch to graph view
         self._main_dlg.ClickInput(coords=self._settings['positions']['graph'])
@@ -380,7 +405,7 @@ class NanoWrite(object):
         @return: Tuple with the (R, G, B) value
         @rtype: tuple
         """
-        self._main_dlg.SetFocus()
+        self.set_dialog_foreground()
 
         img = self._main_dlg.CaptureAsImage()
         return img.convert('RGB').getpixel(coord)
@@ -401,7 +426,14 @@ class NanoWrite(object):
         #print 'Checking finish state:'
         #print 'Job running:', self._job_running
         if self._job_running:
-            last_msg = self.get_current_log()[-1][1].splitlines(True)[-1]
+
+            cmd_log = [txt for _, txt in self.get_command_log()]
+            for submsg in cmd_log:
+                if '!!!' in submsg:
+                    self._job_running = False
+                    raise NanoWrite.ExecutionError(submsg)
+
+            last_msg = cmd_log[-1]
             #print 'Last message:', last_msg
             if re.match(r'.*((done)|(aborted))\.', last_msg):
                 self._job_running = False
@@ -442,7 +474,7 @@ class NanoWrite(object):
         This is done be clicking on the 'Abort' button.
         """
         # Make sure that the correct dialog has the focus
-        self._main_dlg.SetFocus()
+        self.set_dialog_foreground()
 
         # Go to advanced settings tab and click into text field
         self._main_dlg.ClickInput(coords=self._settings['positions']['abort'])
@@ -530,7 +562,7 @@ class NanoWrite(object):
         """
         if self.is_z_inverted() ^ state:
             # Make sure that the correct dialog has the focus
-            self._main_dlg.SetFocus()
+            self.set_dialog_foreground()
 
             # Go to advanced settings tab and click into text field
             self._main_dlg.ClickInput(coords=self._settings['positions']['inverted_z_axis'])
@@ -560,7 +592,7 @@ class NanoWrite(object):
 
         @return: A PIL image object.
         """
-        self._main_dlg.SetFocus()
+        self.set_dialog_foreground()
         return self._main_dlg.CaptureAsImage()
 
     def find_interface(self, at=50):
@@ -573,12 +605,12 @@ class NanoWrite(object):
             z = self.get_piezo_position()[2]
 
         new_pos = (x, y, z)
-        new_pos_invalid = not self.is_within_piezo_range(*new_pos)
+        new_pos_valid = self.is_within_piezo_range(*new_pos)
         gwl = '%f %f %f 0\nwrite' % new_pos
         self.execute_mini_gwl(gwl, invalidate_piezo=True)
         self.wait_until_finished()
 
-        self._cached_piezo_position = new_pos if new_pos_invalid else None
+        self._cached_piezo_position = new_pos if new_pos_valid else None
         # Give it some time to settle
         time.sleep(0.5)
 
