@@ -98,10 +98,22 @@ class NanoWrite(object):
             shutil.rmtree(self._tmpfolder)
 
     def set_dialog_foreground(self, dlg=None):
+        self._close_teamviewer_window()
         dlg = dlg if dlg is not None else self._main_dlg
         dlg.Restore()
         dlg.SetFocus()
 
+    @staticmethod
+    def _close_teamviewer_window():
+        try:
+            pwa_app = pywinauto.application.Application()
+            pwa_app.connect_(path='teamviewer.exe')
+            sponsored_session_window = pwa_app.window_(title_re='Sponsored session')
+
+            if sponsored_session_window.Exists(timeout=0, retry_interval=0):
+                sponsored_session_window['OK'].Click()
+        except Exception:
+            pass
 
     def get_piezo_range(self):
         return self._piezo_range
@@ -423,8 +435,8 @@ class NanoWrite(object):
           'done.' at the end.
         """
 
-        #print 'Checking finish state:'
-        #print 'Job running:', self._job_running
+        print 'Checking finish state:'
+        print 'Job running:', self._job_running
         if self._job_running:
 
             cmd_log = [txt for _, txt in self.get_command_log()]
@@ -434,8 +446,9 @@ class NanoWrite(object):
                     raise NanoWrite.ExecutionError(submsg)
 
             last_msg = cmd_log[-1]
-            #print 'Last message:', last_msg
-            if re.match(r'.*((done)|(aborted))\.', last_msg):
+            print 'Last message:', last_msg
+            #if re.match(r'.*((done)|(aborted))\.', last_msg):
+            if 'done.' in last_msg or 'aborted.' in last_msg:
                 self._job_running = False
                 return True
             else:
@@ -446,7 +459,7 @@ class NanoWrite(object):
         # The process has finished, when the pixel is more or less blue
         bar_full = pixel_val[2] > 240 and pixel_val[1] < 100 and pixel_val[0] < 100
 
-        #print 'Bar is full:', bar_full
+        print 'Bar is full:', bar_full
         if bar_full:
             return True
         else:
@@ -512,6 +525,7 @@ class NanoWrite(object):
 
         Use, when you know that an outside instance manipulated the piezo position.
         """
+        print('Invalidating piezo position')
         self._cached_piezo_position = None
 
     def get_piezo_position(self):
@@ -565,7 +579,7 @@ class NanoWrite(object):
             self.set_dialog_foreground()
 
             # Go to advanced settings tab and click into text field
-            self._main_dlg.ClickInput(coords=self._settings['positions']['inverted_z_axis'])
+            self._main_dlg.ClickInput(coords=self._settings['positions']['inverted_z_axis_pixel'])
 
         assert self.is_z_inverted() == state, "Invert z-state does not match"
 
@@ -623,9 +637,14 @@ class NanoWrite(object):
         if z is None:
             z = current_stage_pos[2]
 
+        delta_z = z-current_stage_pos[2]
+
+        if self.is_z_inverted():
+            delta_z *= -1
+
         self.move_stage_relative(x-current_stage_pos[0],
                                  y-current_stage_pos[1],
-                                 z-current_stage_pos[2])
+                                 delta_z)
 
     def move_stage_relative(self, dx=0, dy=0, dz=0):
         gwl = 'MoveStageX %f\nMoveStageY %f\nAddZDrivePosition %f\nwrite' % (dx, dy, dz)
