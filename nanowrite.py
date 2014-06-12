@@ -54,6 +54,40 @@ SETTINGS = {
             'finished_pixel': (641, 608),
             'inverted_z_axis_pixel': (960, 408)
         }
+    },
+    '1.7.5': {
+        'positions': {
+            # Tab options and fields therein
+            'advanced_settings': (268, 40),
+            'advanced_settings_textfield': (268, 100),
+            'advanced_settings_submit': (582, 110),
+
+            'camera': (190, 40),
+            'graph': (140, 40),
+
+            # Buttons on the left
+            'exchange_holder': (50, 125),
+            'load_structure': (50, 180),
+            'approach_sample': (50, 230),
+            'start_dlw': (50, 510),
+            'abort': (50, 580),
+
+            # Position of some text fields
+            'progress_txt': (190, 610),
+            'progress_estimate_txt': (615, 560),
+
+            'piezo_x_txt': (720, 390),
+            'piezo_y_txt': (720, 410),
+            'piezo_z_txt': (720, 435),
+
+            'stage_x_txt': (820, 390),
+            'stage_y_txt': (820, 410),
+            'stage_z_txt': (820, 435),
+
+            # Some pixel definitions
+            'finished_pixel': (641, 608),
+            'inverted_z_axis_pixel': (960, 408)
+        }
     }
 }
 
