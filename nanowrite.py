@@ -217,7 +217,7 @@ class NanoWrite(object):
 
         # Append a safeguard, this way the "done." of the last command does not bother us.
         # Also insert a wait command to force a progress bar.
-        commands = 'MessageOut ***Seperator***\n' + commands + '\nwait 0.01'
+        commands = 'MessageOut ***Separator***\n' + commands + '\nwait 0.01'
 
         # Make sure that the correct dialog has the focus
         self.set_dialog_foreground()
@@ -480,8 +480,7 @@ class NanoWrite(object):
                     raise NanoWrite.ExecutionError(submsg)
 
             last_msg = cmd_log[-1]
-            print 'Last message:', last_msg
-            #if re.match(r'.*((done)|(aborted))\.', last_msg):
+            #print 'Last message:', last_msg
             if 'done.' in last_msg or 'aborted.' in last_msg:
                 self._job_running = False
                 return True
