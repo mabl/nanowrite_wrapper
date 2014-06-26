@@ -258,16 +258,16 @@ class NanoWrite(object):
 
     def get_command_log(self):
         # Get log of the last command command
-        # This assumes the use of the seperator.
+        # This assumes the use of the separator.
         cmd_log = list()
         for timestamp, msg in reversed(self.get_current_log()):
             cmd_log.append((timestamp, msg))
-            if '***Seperator***' in msg:
+            if '***Separator***' in msg:
                 break
 
         return reversed(cmd_log)
 
-    def load_gwl_file(self, file_path):
+    def load_gwl_file(self, file_path, abort_calculating_time=False):
         """
         Load a GWL file from a given path. The file is not automatically executed. Use @p start_dlw for this.
 
@@ -304,7 +304,7 @@ class NanoWrite(object):
         # Sleep some time, to allow the progress bar to update
         time.sleep(1.0)
         self._job_running = True
-        self.wait_until_finished()
+        self.wait_until_finished(abort_calculating_time=abort_calculating_time)
 
     def show_camera(self):
         """
@@ -338,7 +338,8 @@ class NanoWrite(object):
         if invalidate_piezo:
             self.invalidate_piezo_position()
 
-    def execute_complex_gwl_files(self, start_name, gwl_files, readback_files=None, invalidate_piezo=True):
+    def execute_complex_gwl_files(self, start_name, gwl_files, readback_files=None, invalidate_piezo=True,
+                                  abort_calculating_time=False):
         """
         Execute a set of possibly several GLW files and read back generated output files.
 
@@ -362,7 +363,7 @@ class NanoWrite(object):
 
         # Append a safeguard, this way the "done." of the last command does not bother us.
         # Also insert a wait command to force a progress bar.
-        gwl_files[start_name] = 'MessageOut ***Seperator***\n' + gwl_files[start_name] + '\nwait 0.01'
+        gwl_files[start_name] = 'MessageOut ***Separator***\n' + gwl_files[start_name] + '\nwait 0.01'
 
         for filename, content in gwl_files.items():
             # Make sure that an attacker might not access stuff outside of out temporary folder
@@ -370,7 +371,8 @@ class NanoWrite(object):
             with open(file_path, 'w') as f:
                 f.write(content)
 
-        self.load_gwl_file(os.path.join(self._tmpfolder, os.path.basename(start_name)))
+        self.load_gwl_file(os.path.join(self._tmpfolder, os.path.basename(start_name)),
+                           abort_calculating_time=abort_calculating_time)
         self.wait_until_finished()
         self.start_dlw(invalidate_piezo=invalidate_piezo)
 
@@ -456,7 +458,7 @@ class NanoWrite(object):
         img = self._main_dlg.CaptureAsImage()
         return img.convert('RGB').getpixel(coord)
 
-    def has_finished(self):
+    def has_finished(self, abort_calculating_time=False):
         """
         Check if the instrument has finished with all of its tasks.
 
@@ -484,15 +486,19 @@ class NanoWrite(object):
             if 'done.' in last_msg or 'aborted.' in last_msg:
                 self._job_running = False
                 return True
-            else:
-                return False
+
+            if abort_calculating_time and 'Calculating times...' in last_msg:
+                self.abort()
+                return True
+
+            return False
 
         pixel_val = self._get_pixel(self._settings['positions']['finished_pixel'])
 
         # The process has finished, when the pixel is more or less blue
         bar_full = pixel_val[2] > 240 and pixel_val[1] < 100 and pixel_val[0] < 100
 
-        print 'Bar is full:', bar_full
+        #print 'Bar is full:', bar_full
         if bar_full:
             return True
         else:
@@ -503,14 +509,14 @@ class NanoWrite(object):
 
         return False
 
-    def wait_until_finished(self, poll_interval=0.5):
+    def wait_until_finished(self, poll_interval=0.5, abort_calculating_time=False):
         """
         Stall execution until the current job has finished.
 
         @param poll_interval: Polling interval in seconds
         @type poll_interval: float
         """
-        while not self.has_finished():
+        while not self.has_finished(abort_calculating_time=abort_calculating_time):
             time.sleep(poll_interval)
 
     def abort(self):
